@@ -1,56 +1,19 @@
-<!doctype html>
-<html lang="hi">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin — Banke Bihari</title>
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-<div class="adminTop">
-  <b>🕉️ Banke Bihari — Admin Panel</b>
-  <button class="accountBtn" id="logoutBtn" onclick="adminLogout()" style="display:none">Logout</button>
-</div>
-
-<div class="adminWrap" id="loginBox">
-  <div class="authWrap" style="margin-top:40px">
-    <h1>Admin Login</h1>
-    <div id="loginMsg"></div>
-    <form id="adminLoginForm">
-      <input id="adminPassword" type="password" placeholder="Admin Password" required>
-      <button class="primary" type="submit">Login</button>
-    </form>
-  </div>
-</div>
-
-<div class="adminWrap" id="dashBox" style="display:none">
-  <div class="tabs">
-    <button class="active" onclick="showTab('orders')" id="tabOrders">📦 Orders</button>
-    <button onclick="showTab('products')" id="tabProducts">🛍️ Products</button>
-  </div>
-
-  <div id="ordersTab">
-    <table class="adminTable">
-      <thead><tr><th>#</th><th>ग्राहक</th><th>फ़ोन</th><th>कुल</th><th>स्टेटस</th><th>अपडेट करें</th></tr></thead>
-      <tbody id="ordersBody"></tbody>
-    </table>
-  </div>
-
-  <div id="productsTab" style="display:none">
-    <div class="formRow">
-      <input id="pName" placeholder="Product नाम">
-      <input id="pCategory" placeholder="Category">
-      <input id="pPrice" placeholder="Price" type="number">
-      <input id="pMrp" placeholder="MRP (optional)" type="number">
-      <button class="primary" onclick="addProduct()">+ Add Product</button>
-    </div>
-    <table class="adminTable">
-      <thead><tr><th>नाम</th><th>Category</th><th>Price</th><th>MRP</th><th></th></tr></thead>
-      <tbody id="productsBody"></tbody>
-    </table>
-  </div>
-</div>
-
-<script src="/admin.js"></script>
-</body>
-</html>
+<!doctype html><html lang="hi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banke Bihari Admin</title>
+<style>body{font-family:system-ui;margin:0;background:#f5eedf;color:#241a10}.wrap{max-width:1150px;margin:auto;padding:25px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.card{background:white;border:1px solid #ddd0b9;border-radius:12px;padding:18px}.row{display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid #ddd;padding:12px 0}button{padding:9px 13px;border:0;border-radius:8px;background:#7a2323;color:#fff;cursor:pointer}input{padding:9px;border:1px solid #cdbfa6;border-radius:7px;max-width:140px}@media(max-width:700px){.cards{grid-template-columns:1fr}}</style></head>
+<body><div class="wrap"><h1>🛕 Banke Bihari Admin</h1><div class="cards"><div class="card"><small>Orders</small><h2 id="orders">—</h2></div><div class="card"><small>Sales</small><h2>₹<span id="sales">—</span></h2></div><div class="card"><small>Active Products</small><h2 id="products">—</h2></div></div><h2>Orders</h2><div id="orderList">Loading...</div><h2>Products</h2><div id="productList">Loading...</div></div>
+<script>
+const API=window.API_BASE||"http://localhost:3000/api";
+async function load(){let s=await fetch(API+"/admin/stats").then(r=>r.json());orders.textContent=s.orders;sales.textContent=s.sales;products.textContent=s.products;
+let os=await fetch(API+"/orders").then(r=>r.json());orderList.innerHTML=os.map(o=>`<div class=row><div><b>#${o.id}</b> ${o.customer_name}<br>₹${o.total} • ${o.payment_method}</div><button onclick="sendWA(${o.id})">WhatsApp</button><select onchange="status(${o.id},this.value)"><option>new</option><option>confirmed</option><option>packed</option><option>out_for_delivery</option><option>delivered</option><option>cancelled</option></select></div>`).join("")||"No orders";
+let ps=await fetch(API+"/products").then(r=>r.json());productList.innerHTML=ps.map(p=>`<div class=row><div><b>${p.name}</b><br>₹<input value="${p.price}" id="pr${p.id}"> Stock <input value="${p.stock}" id="st${p.id}"></div><button onclick="save(${p.id})">Save</button></div>`).join("")}
+async function sendWA(id){
+  try{
+    const r=await fetch(API+"/whatsapp/order-notification/"+id,{method:"POST"});
+    const d=await r.json();
+    if(!r.ok) throw Error(d.error||"WhatsApp failed");
+    alert("WhatsApp notification sent.");
+  }catch(e){alert(e.message)}
+}
+async function status(id,v){await fetch(API+"/orders/"+id+"/status",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:v})});load()}
+async function save(id){await fetch(API+"/admin/products/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({price:Number(document.querySelector("#pr"+id).value),stock:Number(document.querySelector("#st"+id).value)})});load()}
+load()</script></body></html>

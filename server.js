@@ -1,433 +1,406 @@
-/**
- * Banke Bihari Pujan Samagri — Node.js backend.
- *
- * IMPORTANT: This uses ONLY Node's built-in modules (http, crypto, fs, path).
- * No "npm install" step needed — just run: node server.js
- *
- * Same API as the Python version, so the frontend in public/ works
- * without any changes. See README.md for setup and deployment.
- */
-const http = require('http');
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const { URL } = require('url');
+const express = require("express");
+const cors = require("cors");
+const { Pool } = require("pg");
 
-const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'change-this-secret-before-going-live';
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use((req,res,next)=>{
+  res.setHeader("X-Content-Type-Options","nosniff");
+  res.setHeader("X-Frame-Options","SAMEORIGIN");
+  res.setHeader("Referrer-Policy","strict-origin-when-cross-origin");
+  next();
+});
 
-const ORDER_STAGES = ['Order Placed', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered'];
 
-const DATA_DIR = path.join(__dirname, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'db.json');
-// All files (HTML/CSS/JS + server.js) live together in one folder for easy
-// mobile upload — so we block server-only files from being served over HTTP.
-const PUBLIC_DIR = __dirname;
-const BLOCKED_FILES = new Set(['server.js', 'seed.js', 'package.json', '.env', '.env.example', '.gitignore', 'README.md']);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
+});
 
-const SEED_PRODUCTS = require('./seed');
+app.get("/api/health", (_req, res) => res.json({ ok: true, service: "Banke Bihari Pooja Samagri API" }));
 
-// ---------------- simple JSON file database ----------------
-function readDB() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) {
-    const initial = { users: [], products: [], orders: [], nextOrderNumber: 1001 };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
+app.get("/api/products", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.*, c.name AS category_name
+       FROM products p LEFT JOIN categories c ON c.id=p.category_id
+       WHERE p.active=true ORDER BY p.id DESC`
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: "Database error" }); }
+});
+
+app.post("/api/orders", async (req, res) => {
+  const { customer, items, payment_method = "COD", delivery_charge = 0 } = req.body;
+  if (!customer?.name || !customer?.phone || !customer?.address || !Array.isArray(items) || !items.length) {
+    return res.status(400).json({ error: "Customer details and cart items are required." });
   }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-}
-function writeDB(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
 
-function seedIfEmpty() {
-  const data = readDB();
-  if (data.products.length === 0) {
-    data.products = SEED_PRODUCTS.map((p) => ({ id: crypto.randomUUID(), ...p }));
-    writeDB(data);
-    console.log(`Seeded ${data.products.length} sample products.`);
-  }
-}
-seedIfEmpty();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-// ---------------- password hashing (built-in crypto, no bcrypt needed) ----------------
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
-}
-function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':');
-  const check = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(check));
-}
-
-// ---------------- signed cookie sessions (no session store needed) ----------------
-function sign(value) {
-  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('hex');
-  return `${value}.${sig}`;
-}
-function unsign(signed) {
-  if (!signed) return null;
-  const idx = signed.lastIndexOf('.');
-  if (idx === -1) return null;
-  const value = signed.slice(0, idx);
-  const sig = signed.slice(idx + 1);
-  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('hex');
-  if (sig.length !== expected.length) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-  return value;
-}
-function parseCookies(req) {
-  const header = req.headers.cookie;
-  const out = {};
-  if (!header) return out;
-  header.split(';').forEach((part) => {
-    const [k, ...v] = part.trim().split('=');
-    out[k] = decodeURIComponent(v.join('='));
-  });
-  return out;
-}
-function getSession(req) {
-  const cookies = parseCookies(req);
-  const raw = unsign(cookies.session);
-  if (!raw) return {};
-  try { return JSON.parse(raw); } catch { return {}; }
-}
-function setSessionCookie(res, sessionObj) {
-  const value = sign(JSON.stringify(sessionObj));
-  const maxAge = 60 * 60 * 24 * 30; // 30 days
-  res.setHeader('Set-Cookie', `session=${encodeURIComponent(value)}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax`);
-}
-function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie', 'session=; HttpOnly; Path=/; Max-Age=0');
-}
-
-// ---------------- request helpers ----------------
-function sendJSON(res, status, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(body);
-}
-function readJSONBody(req) {
-  return new Promise((resolve) => {
-    let data = '';
-    req.on('data', (chunk) => { data += chunk; });
-    req.on('end', () => {
-      try { resolve(data ? JSON.parse(data) : {}); }
-      catch { resolve({}); }
-    });
-  });
-}
-function genOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-function nowISO() { return new Date().toISOString(); }
-
-// NOTE: no real SMS provider wired up yet. OTP is returned in the response
-// and printed to the console so you can test. Before going live, plug in a
-// provider (MSG91 / Twilio / Gupshup) here and stop returning devOtp.
-function sendOtp(phone, otp) {
-  console.log(`[OTP] ${phone} -> ${otp}  (wire up a real SMS provider here before going live)`);
-}
-
-function publicUser(u) {
-  if (!u) return null;
-  const { passwordHash, otp, otpExpires, ...rest } = u;
-  return rest;
-}
-
-// ---------------- static file serving ----------------
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml'
-};
-function serveStatic(req, res, pathname) {
-  let filePath = pathname === '/' ? '/index.html' : pathname;
-  const cleanName = filePath.replace(/^\/+/, '');
-  if (BLOCKED_FILES.has(cleanName) || cleanName.startsWith('.') || cleanName.includes('..')) {
-    res.writeHead(404); res.end('Not found'); return;
-  }
-  const full = path.join(PUBLIC_DIR, filePath);
-  if (!full.startsWith(PUBLIC_DIR)) { res.writeHead(403); res.end(); return; }
-  fs.readFile(full, (err, content) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return; }
-    const ext = path.extname(full);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-    res.end(content);
-  });
-}
-
-// ---------------- routing ----------------
-const routes = []; // { method, pattern: RegExp, keys: [], handler }
-
-function route(method, pattern, handler) {
-  const keys = [];
-  const regexStr = pattern.replace(/:[^/]+/g, (m) => { keys.push(m.slice(1)); return '([^/]+)'; });
-  routes.push({ method, regex: new RegExp(`^${regexStr}$`), keys, handler });
-}
-
-function requireLogin(session) {
-  return !!session.userId;
-}
-function requireAdmin(session) {
-  return !!session.isAdmin;
-}
-
-// ---- AUTH ----
-route('POST', '/api/signup', async (req, res, params, session) => {
-  const body = await readJSONBody(req);
-  const { name, phone, password, address = '' } = body;
-  if (!name || !phone || !password) return sendJSON(res, 400, { error: 'नाम, फ़ोन नंबर और पासवर्ड ज़रूरी है' });
-  if (!/^\d{10}$/.test(phone)) return sendJSON(res, 400, { error: 'सही 10 अंकों का मोबाइल नंबर डालें' });
-
-  const data = readDB();
-  if (data.users.some((u) => u.phone === phone)) {
-    return sendJSON(res, 409, { error: 'इस नंबर से पहले से खाता बना हुआ है, लॉगिन करें' });
-  }
-  const otp = genOtp();
-  const user = {
-    id: crypto.randomUUID(), name, phone, address,
-    passwordHash: hashPassword(password),
-    verified: false, otp, otpExpires: new Date(Date.now() + 10 * 60000).toISOString(),
-    createdAt: nowISO()
-  };
-  data.users.push(user);
-  writeDB(data);
-  sendOtp(phone, otp);
-  sendJSON(res, 200, { ok: true, message: 'OTP भेज दिया गया', devOtp: otp });
-});
-
-route('POST', '/api/verify-otp', async (req, res, params, session) => {
-  const { phone, otp } = await readJSONBody(req);
-  const data = readDB();
-  const user = data.users.find((u) => u.phone === phone);
-  if (!user) return sendJSON(res, 404, { error: 'खाता नहीं मिला' });
-  if (user.verified) return sendJSON(res, 200, { ok: true, message: 'पहले से verified है' });
-  if (!user.otp || new Date() > new Date(user.otpExpires)) {
-    return sendJSON(res, 400, { error: 'OTP की समय सीमा समाप्त हो गई, दोबारा भेजें' });
-  }
-  if (user.otp !== otp) return sendJSON(res, 400, { error: 'गलत OTP' });
-
-  user.verified = true;
-  delete user.otp; delete user.otpExpires;
-  writeDB(data);
-  setSessionCookie(res, { userId: user.id });
-  sendJSON(res, 200, { ok: true, user: publicUser(user) });
-});
-
-route('POST', '/api/resend-otp', async (req, res) => {
-  const { phone } = await readJSONBody(req);
-  const data = readDB();
-  const user = data.users.find((u) => u.phone === phone);
-  if (!user) return sendJSON(res, 404, { error: 'खाता नहीं मिला' });
-  if (user.verified) return sendJSON(res, 200, { ok: true, message: 'पहले से verified है' });
-  const otp = genOtp();
-  user.otp = otp;
-  user.otpExpires = new Date(Date.now() + 10 * 60000).toISOString();
-  writeDB(data);
-  sendOtp(phone, otp);
-  sendJSON(res, 200, { ok: true, message: 'नया OTP भेजा गया', devOtp: otp });
-});
-
-route('POST', '/api/login', async (req, res) => {
-  const { phone, password } = await readJSONBody(req);
-  const data = readDB();
-  const user = data.users.find((u) => u.phone === phone);
-  if (!user || !verifyPassword(password || '', user.passwordHash)) {
-    return sendJSON(res, 401, { error: 'गलत नंबर या पासवर्ड' });
-  }
-  if (!user.verified) {
-    return sendJSON(res, 403, { error: 'पहले OTP से नंबर verify करें', needsVerification: true, phone: user.phone });
-  }
-  setSessionCookie(res, { userId: user.id });
-  sendJSON(res, 200, { ok: true, user: publicUser(user) });
-});
-
-route('POST', '/api/logout', async (req, res) => {
-  clearSessionCookie(res);
-  sendJSON(res, 200, { ok: true });
-});
-
-route('GET', '/api/me', async (req, res, params, session) => {
-  if (!session.userId) return sendJSON(res, 200, { user: null });
-  const data = readDB();
-  const user = data.users.find((u) => u.id === session.userId);
-  sendJSON(res, 200, { user: publicUser(user) });
-});
-
-// ---- PRODUCTS ----
-route('GET', '/api/products', async (req, res, params, session, query) => {
-  const data = readDB();
-  let products = data.products;
-  if (query.category) products = products.filter((p) => p.category === query.category);
-  if (query.q) {
-    const needle = query.q.toLowerCase();
-    products = products.filter((p) => p.name.toLowerCase().includes(needle));
-  }
-  sendJSON(res, 200, { products });
-});
-
-route('GET', '/api/categories', async (req, res) => {
-  const data = readDB();
-  const cats = [...new Set(data.products.map((p) => p.category))];
-  sendJSON(res, 200, { categories: cats });
-});
-
-// ---- ORDERS ----
-route('POST', '/api/orders', async (req, res, params, session) => {
-  if (!requireLogin(session)) return sendJSON(res, 401, { error: 'लॉगिन ज़रूरी है' });
-  const body = await readJSONBody(req);
-  const { items, customerName, phone, address, paymentMethod = 'COD' } = body;
-  if (!items || !items.length) return sendJSON(res, 400, { error: 'कार्ट खाली है' });
-  if (!customerName || !phone || !address) return sendJSON(res, 400, { error: 'नाम, फ़ोन और पता ज़रूरी है' });
-
-  const data = readDB();
-  let total = 0;
-  const resolvedItems = [];
-  for (const it of items) {
-    const product = data.products.find((p) => p.id === it.productId);
-    if (!product) return sendJSON(res, 400, { error: 'invalid product in cart' });
-    const qty = Math.max(1, parseInt(it.qty || 1, 10));
-    total += product.price * qty;
-    resolvedItems.push({ productId: product.id, name: product.name, price: product.price, qty });
-  }
-  const orderNumber = data.nextOrderNumber || 1001;
-  data.nextOrderNumber = orderNumber + 1;
-  const order = {
-    id: crypto.randomUUID(), orderNumber, userId: session.userId,
-    items: resolvedItems, total, customerName, phone, address, paymentMethod,
-    status: ORDER_STAGES[0],
-    statusHistory: [{ status: ORDER_STAGES[0], at: nowISO() }],
-    createdAt: nowISO()
-  };
-  data.orders.push(order);
-  writeDB(data);
-  sendJSON(res, 200, { ok: true, order });
-});
-
-route('GET', '/api/orders', async (req, res, params, session) => {
-  if (!requireLogin(session)) return sendJSON(res, 401, { error: 'लॉगिन ज़रूरी है' });
-  const data = readDB();
-  const mine = data.orders.filter((o) => o.userId === session.userId)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  sendJSON(res, 200, { orders: mine, stages: ORDER_STAGES });
-});
-
-route('GET', '/api/orders/:id', async (req, res, params, session) => {
-  if (!requireLogin(session)) return sendJSON(res, 401, { error: 'लॉगिन ज़रूरी है' });
-  const data = readDB();
-  const order = data.orders.find((o) => o.id === params.id && o.userId === session.userId);
-  if (!order) return sendJSON(res, 404, { error: 'ऑर्डर नहीं मिला' });
-  sendJSON(res, 200, { order, stages: ORDER_STAGES });
-});
-
-// ---- ADMIN ----
-route('POST', '/api/admin/login', async (req, res, params, session, query, setSess) => {
-  const { password } = await readJSONBody(req);
-  if (password !== ADMIN_PASSWORD) return sendJSON(res, 401, { error: 'गलत admin password' });
-  setSessionCookie(res, { ...session, isAdmin: true });
-  sendJSON(res, 200, { ok: true });
-});
-
-route('POST', '/api/admin/logout', async (req, res, params, session) => {
-  setSessionCookie(res, { ...session, isAdmin: false });
-  sendJSON(res, 200, { ok: true });
-});
-
-route('GET', '/api/admin/orders', async (req, res, params, session) => {
-  if (!requireAdmin(session)) return sendJSON(res, 401, { error: 'Admin login required' });
-  const data = readDB();
-  const orders = [...data.orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  sendJSON(res, 200, { orders, stages: ORDER_STAGES });
-});
-
-route('PUT', '/api/admin/orders/:id/status', async (req, res, params, session) => {
-  if (!requireAdmin(session)) return sendJSON(res, 401, { error: 'Admin login required' });
-  const { status } = await readJSONBody(req);
-  if (!ORDER_STAGES.includes(status)) return sendJSON(res, 400, { error: 'invalid status' });
-  const data = readDB();
-  const order = data.orders.find((o) => o.id === params.id);
-  if (!order) return sendJSON(res, 404, { error: 'not found' });
-  order.status = status;
-  order.statusHistory.push({ status, at: nowISO() });
-  writeDB(data);
-  sendJSON(res, 200, { ok: true, order });
-});
-
-route('GET', '/api/admin/products', async (req, res, params, session) => {
-  if (!requireAdmin(session)) return sendJSON(res, 401, { error: 'Admin login required' });
-  const data = readDB();
-  sendJSON(res, 200, { products: data.products });
-});
-
-route('POST', '/api/admin/products', async (req, res, params, session) => {
-  if (!requireAdmin(session)) return sendJSON(res, 401, { error: 'Admin login required' });
-  const body = await readJSONBody(req);
-  const { name, category, price, mrp, emoji } = body;
-  if (!name || !category || !price) return sendJSON(res, 400, { error: 'नाम, category, price ज़रूरी है' });
-  const data = readDB();
-  const product = { id: crypto.randomUUID(), name, category, price: Number(price), mrp: Number(mrp || price), emoji: emoji || '🪔' };
-  data.products.push(product);
-  writeDB(data);
-  sendJSON(res, 200, { ok: true, product });
-});
-
-route('PUT', '/api/admin/products/:id', async (req, res, params, session) => {
-  if (!requireAdmin(session)) return sendJSON(res, 401, { error: 'Admin login required' });
-  const body = await readJSONBody(req);
-  const data = readDB();
-  const product = data.products.find((p) => p.id === params.id);
-  if (!product) return sendJSON(res, 404, { error: 'not found' });
-  Object.assign(product, body);
-  writeDB(data);
-  sendJSON(res, 200, { ok: true, product });
-});
-
-route('DELETE', '/api/admin/products/:id', async (req, res, params, session) => {
-  if (!requireAdmin(session)) return sendJSON(res, 401, { error: 'Admin login required' });
-  const data = readDB();
-  data.products = data.products.filter((p) => p.id !== params.id);
-  writeDB(data);
-  sendJSON(res, 200, { ok: true });
-});
-
-// ---------------- server ----------------
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = url.pathname;
-  const query = Object.fromEntries(url.searchParams.entries());
-  const session = getSession(req);
-
-  if (pathname.startsWith('/api/')) {
-    for (const r of routes) {
-      if (r.method !== req.method) continue;
-      const match = pathname.match(r.regex);
-      if (!match) continue;
-      const params = {};
-      r.keys.forEach((key, i) => { params[key] = decodeURIComponent(match[i + 1]); });
-      try {
-        await r.handler(req, res, params, session, query);
-      } catch (err) {
-        console.error(err);
-        sendJSON(res, 500, { error: 'server error' });
-      }
-      return;
+    let subtotal = 0;
+    const checkedItems = [];
+    for (const item of items) {
+      const r = await client.query(
+        "SELECT id, name, price, stock FROM products WHERE id=$1 AND active=true FOR UPDATE",
+        [item.product_id]
+      );
+      if (!r.rows.length) throw new Error(`Product ${item.product_id} not found`);
+      const p = r.rows[0];
+      const qty = Math.max(1, Number(item.quantity || 1));
+      if (p.stock < qty) throw new Error(`${p.name}: insufficient stock`);
+      subtotal += Number(p.price) * qty;
+      checkedItems.push({ ...p, quantity: qty });
     }
-    return sendJSON(res, 404, { error: 'not found' });
+
+    const total = subtotal + Number(delivery_charge || 0);
+    const order = await client.query(
+      `INSERT INTO orders
+       (customer_name, customer_phone, customer_address, payment_method, payment_status, order_status, subtotal, delivery_charge, total)
+       VALUES ($1,$2,$3,$4,'pending','new',$5,$6,$7) RETURNING id, created_at`,
+      [customer.name, customer.phone, customer.address, payment_method, subtotal, delivery_charge, total]
+    );
+
+    for (const p of checkedItems) {
+      await client.query(
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [order.rows[0].id, p.id, p.name, p.price, p.quantity]
+      );
+      await client.query("UPDATE products SET stock=stock-$1 WHERE id=$2", [p.quantity, p.id]);
+    }
+
+    await client.query("COMMIT");
+    res.status(201).json({ order_id: order.rows[0].id, total, created_at: order.rows[0].created_at });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(400).json({ error: e.message });
+  } finally {
+    client.release();
   }
-
-  if (req.method === 'GET') return serveStatic(req, res, pathname);
-  res.writeHead(405); res.end();
 });
 
-server.listen(PORT, () => {
-  console.log(`Banke Bihari store running: http://localhost:${PORT}`);
-  console.log(`Admin panel: http://localhost:${PORT}/admin.html  (password: ${ADMIN_PASSWORD})`);
+app.get("/api/orders", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM orders ORDER BY created_at DESC");
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: "Database error" }); }
 });
+
+app.patch("/api/orders/:id/status", async (req, res) => {
+  const allowed = ["new", "confirmed", "packed", "out_for_delivery", "delivered", "cancelled"];
+  if (!allowed.includes(req.body.status)) return res.status(400).json({ error: "Invalid status" });
+  try {
+    const { rows } = await pool.query(
+      "UPDATE orders SET order_status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
+      [req.body.status, req.params.id]
+    );
+    await pool.query(
+      "INSERT INTO order_tracking(order_id,status,note) VALUES($1,$2,$3)",
+      [req.params.id, req.body.status, req.body.note || ""]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Order not found" });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: "Database error" }); }
+});
+
+app.post("/api/admin/products", async (req, res) => {
+  const { category_id, name, description = "", price, stock = 0, image_url = "" } = req.body;
+  if (!name || price == null) return res.status(400).json({ error: "Name and price are required." });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO products(category_id,name,description,price,stock,image_url)
+       VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [category_id || null, name, description, price, stock, image_url]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { res.status(500).json({ error: "Database error" }); }
+});
+
+app.get("/api/kits", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT k.id, k.name, k.description, k.fixed_price,
+             COALESCE(json_agg(json_build_object('product_id',p.id,'name',p.name,'price',p.price,'quantity',ki.quantity))
+             FILTER (WHERE p.id IS NOT NULL), '[]') AS items
+      FROM pooja_kits k
+      LEFT JOIN pooja_kit_items ki ON ki.kit_id=k.id
+      LEFT JOIN products p ON p.id=ki.product_id
+      WHERE k.active=true
+      GROUP BY k.id ORDER BY k.id DESC`);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: "Database error" }); }
+});
+
+app.get("/api/orders/:id/track", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT status,note,created_at FROM order_tracking WHERE order_id=$1 ORDER BY created_at ASC",
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: "Database error" }); }
+});
+
+
+app.patch("/api/admin/products/:id", async (req, res) => {
+  const { name, description, price, stock, image_url, active, category_id } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE products SET
+       name=COALESCE($1,name), description=COALESCE($2,description),
+       price=COALESCE($3,price), stock=COALESCE($4,stock),
+       image_url=COALESCE($5,image_url), active=COALESCE($6,active),
+       category_id=COALESCE($7,category_id), updated_at=NOW()
+       WHERE id=$8 RETURNING *`,
+      [name,description,price,stock,image_url,active,category_id,req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({error:"Product not found"});
+    res.json(rows[0]);
+  } catch(e){res.status(500).json({error:"Database error"});}
+});
+
+app.delete("/api/admin/products/:id", async (req,res)=>{
+  try {
+    await pool.query("UPDATE products SET active=false, updated_at=NOW() WHERE id=$1",[req.params.id]);
+    res.json({ok:true});
+  } catch(e){res.status(500).json({error:"Database error"});}
+});
+
+app.get("/api/admin/stats", async (_req,res)=>{
+  try{
+    const [orders,sales,products] = await Promise.all([
+      pool.query("SELECT COUNT(*)::int AS count FROM orders"),
+      pool.query("SELECT COALESCE(SUM(total),0)::numeric AS total FROM orders WHERE order_status<>'cancelled'"),
+      pool.query("SELECT COUNT(*)::int AS count FROM products WHERE active=true")
+    ]);
+    res.json({orders:orders.rows[0].count,sales:sales.rows[0].total,products:products.rows[0].count});
+  }catch(e){res.status(500).json({error:"Database error"});}
+});
+
+
+app.post("/api/orders/:id/cancel", async (req,res)=>{
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    const q=await client.query(
+      "SELECT id,order_status FROM orders WHERE id=$1 FOR UPDATE",
+      [req.params.id]
+    );
+    if(!q.rows.length){ await client.query("ROLLBACK"); return res.status(404).json({error:"Order not found"}); }
+    const status=q.rows[0].order_status;
+    if(["delivered","cancelled","out_for_delivery"].includes(status)){
+      await client.query("ROLLBACK");
+      return res.status(400).json({error:"इस stage पर order cancel नहीं किया जा सकता।"});
+    }
+    const order=await client.query(
+      "UPDATE orders SET order_status='cancelled', updated_at=NOW() WHERE id=$1 RETURNING *",
+      [req.params.id]
+    );
+    await client.query(
+      "INSERT INTO order_tracking(order_id,status,note) VALUES($1,'cancelled',$2)",
+      [req.params.id, req.body?.reason || "Customer requested cancellation"]
+    );
+    await client.query(
+      `UPDATE products p SET stock=p.stock+oi.quantity
+       FROM order_items oi
+       WHERE oi.order_id=$1 AND oi.product_id=p.id`,
+      [req.params.id]
+    );
+    await client.query("COMMIT");
+    res.json(order.rows[0]);
+  }catch(e){
+    await client.query("ROLLBACK");
+    res.status(500).json({error:"Could not cancel order"});
+  }finally{client.release();}
+});
+
+
+// ---- Production-oriented APIs ----
+function auth(req,res,next){
+  const token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
+  try{ if(!token) throw new Error(); req.user=jwt.verify(token,process.env.JWT_SECRET); next(); }
+  catch(e){ return res.status(401).json({error:"Unauthorized"}); }
+}
+function adminAuth(req,res,next){
+  if(req.user?.role!=="admin") return res.status(403).json({error:"Admin only"});
+  next();
+}
+app.post("/api/auth/register", async (req,res)=>{
+  const {name,phone,email,password}=req.body||{};
+  if(!name||!phone||!password) return res.status(400).json({error:"Name, phone and password required"});
+  try{
+    const hash=await bcrypt.hash(password,12);
+    const q=await pool.query("INSERT INTO users(name,phone,email,password_hash) VALUES($1,$2,$3,$4) RETURNING id,name,phone,email",[name,phone,email||null,hash]);
+    const token=jwt.sign({id:q.rows[0].id,role:"customer"},process.env.JWT_SECRET,{expiresIn:"30d"});
+    res.json({user:q.rows[0],token});
+  }catch(e){res.status(400).json({error:"Phone may already be registered"});}
+});
+app.post("/api/auth/login", async (req,res)=>{
+  const {phone,password}=req.body||{};
+  try{
+    const q=await pool.query("SELECT * FROM users WHERE phone=$1",[phone]);
+    if(!q.rows.length || !(await bcrypt.compare(password,q.rows[0].password_hash))) return res.status(401).json({error:"Invalid login"});
+    const role=q.rows[0].phone===process.env.ADMIN_PHONE?"admin":"customer";
+    const token=jwt.sign({id:q.rows[0].id,role},process.env.JWT_SECRET,{expiresIn:"30d"});
+    res.json({token,user:{id:q.rows[0].id,name:q.rows[0].name,phone:q.rows[0].phone,role}});
+  }catch(e){res.status(500).json({error:"Login failed"});}
+});
+
+app.get("/api/me/orders",auth,async(req,res)=>{
+  try{
+    const q=await pool.query("SELECT * FROM orders WHERE customer_phone=(SELECT phone FROM users WHERE id=$1) ORDER BY created_at DESC",[req.user.id]);
+    res.json(q.rows);
+  }catch(e){res.status(500).json({error:"Could not load orders"});}
+});
+
+app.post("/api/me/reorder/:id",auth,async(req,res)=>{
+  try{
+    const q=await pool.query("SELECT product_id,quantity FROM order_items WHERE order_id=$1",[req.params.id]);
+    res.json({items:q.rows});
+  }catch(e){res.status(500).json({error:"Could not reorder"});}
+});
+
+app.get("/api/products/:id/related",async(req,res)=>{
+  try{
+    const q=await pool.query(`SELECT p.* FROM products p WHERE p.category_id=(SELECT category_id FROM products WHERE id=$1) AND p.id<>$1 AND p.active=true ORDER BY p.id DESC LIMIT 8`,[req.params.id]);
+    res.json(q.rows);
+  }catch(e){res.status(500).json({error:"Database error"});}
+});
+
+app.get("/api/products/:id/reviews",async(req,res)=>{
+  try{
+    const q=await pool.query(`SELECT r.rating,r.title,r.body,r.created_at,u.name FROM reviews r LEFT JOIN users u ON u.id=r.user_id WHERE r.product_id=$1 AND r.approved=true ORDER BY r.created_at DESC`,[req.params.id]);
+    res.json(q.rows);
+  }catch(e){res.status(500).json({error:"Database error"});}
+});
+app.post("/api/products/:id/reviews",auth,async(req,res)=>{
+  const {rating,title,body,order_id}=req.body||{};
+  if(!rating || rating<1 || rating>5) return res.status(400).json({error:"Rating 1-5 required"});
+  try{
+    const q=await pool.query("INSERT INTO reviews(product_id,user_id,order_id,rating,title,body) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",[req.params.id,req.user.id,order_id||null,rating,title||null,body||null]);
+    res.json({ok:true,review:q.rows[0]});
+  }catch(e){res.status(500).json({error:"Review failed"});}
+});
+
+app.get("/api/delivery/quote",async(req,res)=>{
+  const {pincode,area,total}=req.query;
+  try{
+    const q=await pool.query("SELECT * FROM delivery_zones WHERE active=true AND (pincode=$1 OR area ILIKE $2) LIMIT 1",[pincode||"",`%${area||""}%`]);
+    if(!q.rows.length) return res.json({charge:50,zone:"Bhind default",message:"Flat Bhind delivery charge"});
+    const z=q.rows[0], charge=(z.free_above && Number(total)>=Number(z.free_above))?0:Number(z.charge);
+    res.json({charge,zone:z.name});
+  }catch(e){res.status(500).json({error:"Delivery quote failed"});}
+});
+
+app.post("/api/coupons/validate",async(req,res)=>{
+  const {code,subtotal}=req.body||{};
+  try{
+    const q=await pool.query("SELECT * FROM coupons WHERE UPPER(code)=UPPER($1) AND active=true AND (expires_at IS NULL OR expires_at>NOW()) LIMIT 1",[code||""]);
+    if(!q.rows.length) return res.status(400).json({error:"Invalid/expired coupon"});
+    const c=q.rows[0]; if(Number(subtotal)<Number(c.min_order)) return res.status(400).json({error:`Minimum order ₹${c.min_order}`});
+    let discount=c.discount_type==="percent"?Number(subtotal)*Number(c.discount_value)/100:Number(c.discount_value);
+    if(c.max_discount) discount=Math.min(discount,Number(c.max_discount));
+    res.json({valid:true,discount:Number(discount.toFixed(2)),coupon:c.code});
+  }catch(e){res.status(500).json({error:"Coupon validation failed"});}
+});
+
+app.post("/api/payments/create",async(req,res)=>{
+  const {order_id,amount}=req.body||{};
+  // Configure a real provider through environment variables. Never trust client-side payment confirmation.
+  if(!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET)
+    return res.status(503).json({error:"Payment gateway credentials are not configured"});
+  try{
+    const Razorpay=require("razorpay");
+    const rz=new Razorpay({key_id:process.env.RAZORPAY_KEY_ID,key_secret:process.env.RAZORPAY_KEY_SECRET});
+    const order=await rz.orders.create({amount:Math.round(Number(amount)*100),currency:"INR",receipt:`bb-${order_id}`});
+    await pool.query("INSERT INTO payment_transactions(order_id,provider,provider_payment_id,amount,status) VALUES($1,'razorpay',$2,$3,'created')",[order_id,order.id,amount]);
+    res.json({provider:"razorpay",order});
+  }catch(e){res.status(500).json({error:"Payment order creation failed"});}
+});
+
+app.post("/api/payments/webhook",express.raw({type:"application/json"}),async(req,res)=>{
+  // Verify Razorpay webhook signature before changing payment/order status.
+  const secret=process.env.RAZORPAY_WEBHOOK_SECRET;
+  if(!secret) return res.status(503).end();
+  const signature=req.headers["x-razorpay-signature"];
+  const expected=crypto.createHmac("sha256",secret).update(req.body).digest("hex");
+  if(!signature || !crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected))) return res.status(400).end();
+  try{
+    const event=JSON.parse(req.body.toString());
+    const entity=event.payload?.payment?.entity;
+    if(entity?.id){
+      await pool.query("UPDATE payment_transactions SET status=$1,raw_event=$2 WHERE provider_payment_id=$3",[entity.status||event.event,event,entity.order_id]);
+    }
+    res.json({ok:true});
+  }catch(e){res.status(400).end();}
+});
+
+app.get("/api/admin/low-stock",async(req,res)=>{
+  try{const q=await pool.query("SELECT id,name,stock FROM products WHERE active=true AND stock<=5 ORDER BY stock ASC");res.json(q.rows);}
+  catch(e){res.status(500).json({error:"Database error"});}
+});
+
+
+// ---- WhatsApp Cloud API ----
+// Set WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_API_VERSION in backend/.env.
+// Never expose the access token in frontend JavaScript.
+async function sendWhatsAppText(to, body){
+  const token=process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneId=process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const version=process.env.WHATSAPP_API_VERSION || "v23.0";
+  if(!token || !phoneId) throw new Error("WhatsApp Cloud API credentials are not configured");
+  const r=await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`,{
+    method:"POST",
+    headers:{"Authorization":`Bearer ${token}`,"Content-Type":"application/json"},
+    body:JSON.stringify({messaging_product:"whatsapp",to:String(to),type:"text",text:{body}})
+  });
+  const data=await r.json();
+  if(!r.ok) throw new Error(data?.error?.message || "WhatsApp API error");
+  return data;
+}
+
+app.post("/api/whatsapp/send-order", async(req,res)=>{
+  const {phone,message}=req.body||{};
+  if(!phone || !message) return res.status(400).json({error:"phone and message required"});
+  try{
+    const data=await sendWhatsAppText(phone,message);
+    res.json({ok:true,data});
+  }catch(e){res.status(503).json({error:e.message});}
+});
+
+app.post("/api/whatsapp/order-notification/:id", async(req,res)=>{
+  try{
+    const q=await pool.query(`SELECT id,customer_name,customer_phone,total,order_status FROM orders WHERE id=$1`,[req.params.id]);
+    if(!q.rows.length) return res.status(404).json({error:"Order not found"});
+    const o=q.rows[0];
+    const msg=`🛕 Banke Bihari Pooja Samagri\nOrder #${o.id}\nStatus: ${o.order_status}\nAmount: ₹${o.total}\n\nDhanyavaad!`;
+    const data=await sendWhatsAppText(o.customer_phone,msg);
+    res.json({ok:true,data});
+  }catch(e){res.status(503).json({error:e.message});}
+});
+
+
+app.get("/api/orders/:id/invoice", async (req,res)=>{
+  try{
+    const q=await pool.query(`SELECT o.*, oi.product_id, oi.quantity, oi.unit_price, p.name
+      FROM orders o JOIN order_items oi ON oi.order_id=o.id
+      JOIN products p ON p.id=oi.product_id WHERE o.id=$1 ORDER BY oi.id`,[req.params.id]);
+    if(!q.rows.length) return res.status(404).send("Order not found");
+    const o=q.rows[0];
+    const rows=q.rows.map(x=>`<tr><td>${String(x.name).replace(/[<>]/g,"")}</td><td>${x.quantity}</td><td>₹${x.unit_price}</td><td>₹${Number(x.unit_price)*Number(x.quantity)}</td></tr>`).join("");
+    res.type("html").send(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice #${o.id}</title>
+    <style>body{font-family:Arial;max-width:800px;margin:30px auto;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}@media print{button{display:none}}</style></head>
+    <body><button onclick="print()">Print / Save PDF</button><h1>Banke Bihari Pooja Samagri</h1>
+    <p>Invoice #${o.id}<br>Customer: ${String(o.customer_name).replace(/[<>]/g,"")}<br>Phone: ${String(o.customer_phone).replace(/[<>]/g,"")}<br>Address: ${String(o.customer_address||"").replace(/[<>]/g,"")}</p>
+    <table><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>${rows}</table>
+    <h2>Total: ₹${o.total}</h2><p>Delivery charge: ₹50</p></body></html>`);
+  }catch(e){res.status(500).send("Invoice error");}
+});
+
+app.listen(process.env.PORT || 3000, () =>
+  console.log(`API running on port ${process.env.PORT || 3000}`)
+);
