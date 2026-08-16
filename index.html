@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banke Bihari Pujan Samagri</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand">
+    <div class="logo">🕉️</div>
+    <div>
+      <b>Banke Bihari</b>
+      <span>Pujan Samagri</span>
+    </div>
+  </a>
+  <div class="search">
+    <select id="category"><option value="">All Categories</option></select>
+    <input id="search" placeholder="पूजा सामग्री खोजें...">
+    <button onclick="loadProducts()">🔍</button>
+  </div>
+  <div class="topRight">
+    <a href="/account.html" class="accountBtn" id="accountLink">👤 Login</a>
+    <button class="cartBtn" onclick="openCart()">🛒 Cart <span id="cartCount">0</span></button>
+  </div>
+</header>
+
+<nav id="catNav">
+  <a href="#" onclick="filterCat('')">Home</a>
+</nav>
+
+<section class="hero">
+  <div>
+    <p class="eyebrow">शुभ पूजा • शुद्ध सामग्री • भरोसेमंद सेवा</p>
+    <h1>हर पूजा की सामग्री,<br><span>एक ही जगह</span></h1>
+    <p>Banke Bihari Pujan Samagri से पूजा की जरूरी सामग्री घर बैठे मंगाइए। ऑर्डर करें, ट्रैक करें, भरोसे के साथ।</p>
+    <button onclick="document.querySelector('#products').scrollIntoView({behavior:'smooth'})">Shop Now →</button>
+  </div>
+  <div class="heroCard">🪔<br><small>पूजा सामग्री</small></div>
+</section>
+
+<section class="strip">
+  <div>🚚 <b>Fast Delivery</b><small>भिंड और आसपास</small></div>
+  <div>📦 <b>Order Tracking</b><small>लाइव स्टेटस देखें</small></div>
+  <div>💳 <b>COD Available</b><small>Cash on Delivery</small></div>
+  <div>☎️ <b>Support</b><small>+91 88398 00902</small></div>
+</section>
+
+<main id="products">
+  <div class="sectionHead">
+    <div><h2>Featured Products</h2><p>पूजा के लिए चुनिंदा सामग्री</p></div>
+  </div>
+  <div id="grid" class="grid"></div>
+</main>
+
+<section id="about" class="about">
+  <h2>Banke Bihari Pujan Samagri</h2>
+  <p>आपकी पूजा को पूर्ण बनाने के लिए गुणवत्तापूर्ण पूजा सामग्री उपलब्ध कराने का हमारा प्रयास है।</p>
+  <p>📍 बाज़ारिया, किला रोड, भिंड &nbsp; | &nbsp; 📞 +91 88398 00902</p>
+</section>
+
+<div id="cartModal" class="modal">
+  <div class="modalBox">
+    <button class="close" onclick="closeCart()">×</button>
+    <h2>Your Cart</h2>
+    <div id="cartItems"></div>
+    <div class="total"><span>Total</span><b id="cartTotal">₹0</b></div>
+    <button class="primary" onclick="openCheckout()">Proceed to Checkout</button>
+  </div>
+</div>
+
+<div id="checkoutModal" class="modal">
+  <div class="modalBox">
+    <button class="close" onclick="closeCheckout()">×</button>
+    <h2>Checkout</h2>
+    <div id="checkoutLoginNotice"></div>
+    <form id="checkoutForm">
+      <input id="customerName" placeholder="पूरा नाम" required>
+      <input id="phone" placeholder="मोबाइल नंबर" pattern="[0-9]{10}" required>
+      <textarea id="address" placeholder="पूरा डिलीवरी पता" required></textarea>
+      <select id="paymentMethod">
+        <option value="COD">Cash on Delivery</option>
+      </select>
+      <button class="primary" type="submit">Place Order</button>
+    </form>
+    <div id="orderResult"></div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
