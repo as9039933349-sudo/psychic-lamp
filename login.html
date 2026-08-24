@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>लॉगिन — Banke Bihari</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#241A10">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand">
+    <div class="logo">🕉️</div>
+    <div><b>Banke Bihari</b><span>Pujan Samagri</span></div>
+  </a>
+</header>
+
+<div class="authWrap">
+  <h1>लॉगिन करें</h1>
+  <div id="msg"></div>
+  <form id="loginForm">
+    <input id="phone" placeholder="मोबाइल नंबर" pattern="[0-9]{10}" required>
+    <input id="password" type="password" placeholder="पासवर्ड" required>
+    <button class="primary" type="submit">लॉगिन करें</button>
+  </form>
+  <div class="switchLink">खाता नहीं है? <a href="/signup.html">नया खाता बनाएं</a></div>
+  <div class="switchLink"><a href="/forgot-password.html">पासवर्ड भूल गए?</a></div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  msg.innerHTML = '';
+  const body = {
+    phone: document.getElementById('phone').value,
+    password: document.getElementById('password').value
+  };
+  const res = await fetch('/api/login', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    if (data.needsVerification) {
+      msg.innerHTML = `<div class="error">${data.error} — <a href="/signup.html">वापस साइनअप पर जाएं और OTP verify करें</a></div>`;
+    } else {
+      msg.innerHTML = `<div class="error">${data.error}</div>`;
+    }
+    return;
+  }
+  window.location.href = '/account.html';
+});
+</script>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{})); }
+</script>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banke Bihari Pujan Samagri</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#241A10">
+  <meta name="description" content="Banke Bihari Pujan Samagri — पूजा सामग्री, भक्ति सामग्री और पूजा जनरेटर. भिंड में आसान ऑर्डर और डिलीवरी।">
+  <meta name="keywords" content="पूजा सामग्री, puja samagri, Bhind, Banke Bihari, havan samagri, pooja items">
+  <meta property="og:title" content="Banke Bihari Pujan Samagri">
+  <meta property="og:description" content="हर पूजा की सामग्री, एक ही जगह।">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Banke Bihari">
+  <meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+<a class="skipLink" href="#products">Skip to products</a>
+<div class="announcement"><span>🪔</span><strong>शुभ पूजा • शुद्ध सामग्री</strong><span class="announcementDot">•</span><span>भिंड में भरोसेमंद पूजा सामग्री</span><a href="/puja-generator.html">पूजा सामग्री बनाएं →</a></div>
+<header class="top">
+  <a href="/" class="brand">
+    <div class="logo">🕉️</div>
+    <div>
+      <b>Banke Bihari</b>
+      <span>Pujan Samagri</span>
+    </div>
+  </a>
+  <div class="searchWrap">
+    <div class="search" style="max-width:100%">
+      <select id="category"><option value="" data-i18n="allCategories">All Categories</option></select>
+      <input id="search" data-i18n-ph="searchPh" placeholder="पूजा सामग्री खोजें..." autocomplete="off">
+      <button onclick="loadProducts(); hideSuggestions();">🔍</button>
+    </div>
+    <div class="suggestBox" id="suggestBox"></div>
+  </div>
+  <div class="topRight">
+    <div class="langSwitch">
+      <button id="langHi" onclick="setLang('hi')">हिं</button>
+      <button id="langEn" onclick="setLang('en')">EN</button>
+    </div>
+    <a href="/account.html#wishlist" class="accountBtn" data-i18n="wishlistNav">❤️ Wishlist</a>
+    <a href="/account.html" class="accountBtn" id="accountLink" data-i18n="loginNav">👤 Login</a>
+    <button class="cartBtn" onclick="openCart()">🛒 <span data-i18n="cart">Cart</span> <span id="cartCount">0</span></button>
+    <button class="accountBtn" id="installBtn" onclick="installApp()" style="display:none; background:#A8792D">📲 App Install करें</button>
+  </div>
+</header>
+
+<nav id="catNav">
+  <a href="#" onclick="filterCat('')" data-i18n="home">Home</a>
+</nav>
+
+<div class="deliveryNotice" style="margin:10px 7%" data-i18n="deliveryNotice">🚚 अभी हम सिर्फ़ भिंड (पिनकोड 477XXX) में ही डिलीवरी करते हैं</div>
+
+<section class="hero premiumHero">
+  <div class="heroGlow heroGlowOne"></div><div class="heroGlow heroGlowTwo"></div>
+  <div>
+    <p class="eyebrow" data-i18n="heroEyebrow">शुभ पूजा • शुद्ध सामग्री • भरोसेमंद सेवा</p>
+    <h1><span data-i18n="heroTitle1">हर पूजा की सामग्री,</span><br><span data-i18n="heroTitle2">एक ही जगह</span></h1>
+    <p data-i18n="heroDesc">Banke Bihari Pujan Samagri से पूजा की जरूरी सामग्री घर बैठे मंगाइए। ऑर्डर करें, ट्रैक करें, भरोसे के साथ।</p>
+    <button onclick="document.querySelector('#products').scrollIntoView({behavior:'smooth'})" data-i18n="shopNow">Shop Now →</button>
+    <a href="/puja-generator.html" style="display:inline-block;margin-left:10px;padding:12px 20px;border:1px solid #A8792D;color:#F4EDDD;border-radius:7px;text-decoration:none;font-weight:bold" data-i18n="pujaGenBtn">🪔 पूजा सामग्री जनरेटर</a>
+  </div>
+  <div class="heroVisual">
+    <div class="orb orbBack"></div>
+    <div class="orb orbFront">🪔</div>
+    <div class="floatingBadge badgeTop">✦ शुद्ध सामग्री</div>
+    <div class="floatingBadge badgeBottom">🚚 भिंड डिलीवरी</div>
+  </div>
+</section>
+
+<div class="premiumMicrobar reveal">
+  <div><span>✦</span> Curated Puja Essentials</div>
+  <div><span>◈</span> Quality-first selection</div>
+  <div><span>✺</span> Made for every ritual</div>
+  <div><span>⌁</span> Personal WhatsApp support</div>
+</div>
+
+<section class="trustStrip reveal">
+  <div>🚚 <b data-i18n="fastDelivery">Fast Delivery</b><small data-i18n="fastDeliverySub">भिंड में ही</small></div>
+  <div>📦 <b data-i18n="orderTracking">Order Tracking</b><small data-i18n="orderTrackingSub">लाइव स्टेटस देखें</small></div>
+  <div>💳 <b data-i18n="codAvailable">COD Available</b><small>Cash on Delivery</small></div>
+  <div>☎️ <b data-i18n="support">Support</b><small>+91 88398 00902</small></div>
+</section>
+
+<section class="valueSection reveal">
+  <div class="sectionEyebrow">BANKe BIHARI • SEVA</div>
+  <h2>पूजा की तैयारी, अब और आसान</h2>
+  <p>सही सामग्री खोजें, पूजा की सूची बनाएं और घर बैठे ऑर्डर करें।</p>
+  <div class="valueGrid">
+    <article><span>01</span><b>पूजा जनरेटर</b><small>पूजा चुनते ही जरूरी सामग्री की स्मार्ट सूची।</small><a href="/puja-generator.html">अभी देखें →</a></article>
+    <article><span>02</span><b>भरोसेमंद सामग्री</b><small>दैनिक पूजा से विशेष अनुष्ठान तक एक जगह।</small><a href="#products">सामग्री देखें →</a></article>
+    <article><span>03</span><b>आसान ऑर्डर</b><small>कार्ट, ऑर्डर ट्रैकिंग और WhatsApp सहायता।</small><a href="/account.html">मेरा खाता →</a></article>
+  </div>
+</section>
+
+<section class="signature reveal">
+  <div class="signatureIntro">
+    <div class="sectionEyebrow">THE BANKE BIHARI EXPERIENCE</div>
+    <h2>पूजा की खरीदारी नहीं,<br><em>एक सुंदर अनुभव।</em></h2>
+    <p>हर जरूरी सामग्री को सरल, सुरुचिपूर्ण और भरोसेमंद तरीके से खोजिए। आपकी पूजा की तैयारी अब पहले से ज्यादा आसान है।</p>
+    <a class="outlineBtn" href="/puja-generator.html">अपनी पूजा की सूची बनाएं <span>↗</span></a>
+  </div>
+  <div class="experienceGrid">
+    <article class="experienceCard featured"><span class="num">01</span><div class="experienceIcon">🪔</div><h3>Smart Puja List</h3><p>पूजा चुनें और जरूरी सामग्री की curated list तुरंत पाएं।</p><a href="/puja-generator.html">Explore generator →</a></article>
+    <article class="experienceCard"><span class="num">02</span><div class="experienceIcon">✦</div><h3>Curated Quality</h3><p>दैनिक पूजा से विशेष अनुष्ठान तक thoughtfully selected essentials.</p><a href="#products">Shop essentials →</a></article>
+    <article class="experienceCard"><span class="num">03</span><div class="experienceIcon">⌁</div><h3>Personal Seva</h3><p>Order help और local support के लिए सीधे WhatsApp पर बात करें।</p><a href="https://wa.me/918839800902">Talk to us →</a></article>
+  </div>
+</section>
+
+<main id="products" class="reveal">
+  <div class="sectionHead">
+    <div><h2 data-i18n="featuredProducts">Featured Products</h2><p data-i18n="featuredProductsSub">पूजा के लिए चुनिंदा सामग्री</p></div>
+  </div>
+  <div class="collectionRail">
+    <a href="#products" onclick="filterCat('')"><span>✦</span><b>All Essentials</b><small>सभी सामग्री</small></a>
+    <a href="#products" onclick="filterCat('मूर्तियां')"><span>◉</span><b>Deity Collection</b><small>मूर्तियां</small></a>
+    <a href="#products" onclick="filterCat('माला व पुष्प')"><span>❋</span><b>Flowers & Mala</b><small>माला व पुष्प</small></a>
+    <a href="#products" onclick="filterCat('हवन सामग्री')"><span>✺</span><b>Havan Essentials</b><small>हवन सामग्री</small></a>
+  </div>
+  <div id="grid" class="grid"></div>
+</main>
+
+<section class="premiumQuote reveal"><div class="quoteMark">“</div><p>आपकी श्रद्धा, हमारी सेवा।</p><span>Banke Bihari Pujan Samagri</span></section>
+
+<section id="about" class="about reveal">
+  <h2>Banke Bihari Pujan Samagri</h2>
+  <p data-i18n="aboutDesc">आपकी पूजा को पूर्ण बनाने के लिए गुणवत्तापूर्ण पूजा सामग्री उपलब्ध कराने का हमारा प्रयास है।</p>
+  <p>📍 बाज़ारिया, किला रोड, भिंड &nbsp; | &nbsp; 📞 +91 88398 00902</p>
+</section>
+
+<div id="cartModal" class="modal">
+  <div class="modalBox">
+    <button class="close" onclick="closeCart()">×</button>
+    <h2 data-i18n="yourCart">Your Cart</h2>
+    <div id="cartItems"></div>
+    <div class="total"><span data-i18n="total">Total</span><b id="cartTotal">₹0</b></div>
+    <div id="cartRelated"></div>
+    <button class="primary" onclick="openCheckout()" data-i18n="proceedCheckout">Proceed to Checkout</button>
+  </div>
+</div>
+
+<div id="checkoutModal" class="modal">
+  <div class="modalBox">
+    <button class="close" onclick="closeCheckout()">×</button>
+    <h2 data-i18n="checkout">Checkout</h2>
+    <div id="checkoutLoginNotice"></div>
+    <div class="deliveryNotice" data-i18n="deliveryNoticeShort">डिलीवरी सिर्फ़ भिंड (पिनकोड 477XXX) में उपलब्ध है</div>
+    <form id="checkoutForm">
+      <input id="customerName" data-i18n-ph="fullName" placeholder="पूरा नाम" required>
+      <input id="phone" data-i18n-ph="mobileNumber" placeholder="मोबाइल नंबर" pattern="[0-9]{10}" required>
+      <textarea id="address" data-i18n-ph="fullAddress" placeholder="पूरा डिलीवरी पता" required></textarea>
+      <input id="pincode" data-i18n-ph="pincode" placeholder="पिनकोड (477XXX)" pattern="[0-9]{6}" maxlength="6" required>
+      <select id="paymentMethod" onchange="toggleUpiBox()">
+        <option value="COD">Cash on Delivery</option>
+        <option value="UPI">UPI (मैनुअल भुगतान)</option>
+      </select>
+      <div id="upiBox" style="display:none;background:#fff7ed;border:1px solid #fed7aa;padding:12px;border-radius:7px;margin-bottom:10px;font-size:13px">
+        ऑर्डर करने के बाद UPI से भुगतान का बटन दिखेगा — भुगतान करके स्क्रीनशॉट WhatsApp पर भेज दें।
+      </div>
+      <button class="primary" type="submit" data-i18n="placeOrder">Place Order</button>
+    </form>
+    <div id="orderResult"></div>
+  </div>
+</div>
+
+<div id="reviewModal" class="modal">
+  <div class="modalBox">
+    <button class="close" onclick="closeReviewModal()">×</button>
+    <h2 id="reviewProductName" data-i18n="reviews">Reviews</h2>
+    <div id="reviewLoginNotice"></div>
+    <div id="reviewForm" style="margin-bottom:16px;border-bottom:1px solid #eee;padding-bottom:16px">
+      <div class="starInput" id="starInput">
+        <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+      </div>
+      <textarea id="reviewComment" data-i18n-ph="reviewCommentPh" placeholder="अपना अनुभव लिखें (वैकल्पिक)"></textarea>
+      <button class="primary" onclick="submitReview()" data-i18n="submitReview">Submit Review</button>
+    </div>
+    <div id="reviewsList"></div>
+  </div>
+</div>
+
+<footer class="siteFooter">
+  <div class="footerGrid">
+    <div>
+      <h5>Banke Bihari Pujan Samagri</h5>
+      <a href="#about" data-i18n="footerAbout">हमारे बारे में</a>
+      <a href="/account.html" data-i18n="footerAccount">मेरा खाता</a>
+      <a href="/account.html#wishlist" data-i18n="footerWishlist">❤️ Wishlist</a>
+    </div>
+    <div>
+      <h5 data-i18n="footerCategories">Categories</h5>
+      <a href="#products" onclick="filterCat('मूर्तियां')">मूर्तियां</a>
+      <a href="#products" onclick="filterCat('माला व पुष्प')">माला व पुष्प</a>
+      <a href="#products" onclick="filterCat('हवन सामग्री')">हवन सामग्री</a>
+    </div>
+    <div>
+      <h5 data-i18n="footerDelivery">Delivery</h5>
+      <span style="display:block;font-size:13px;margin-bottom:8px" data-i18n="footerDeliveryText">सिर्फ़ भिंड (477XXX) में</span>
+      <span style="display:block;font-size:13px" data-i18n="footerCod">Cash on Delivery उपलब्ध</span>
+    </div>
+    <div>
+      <h5 data-i18n="footerContact">Contact</h5>
+      <span style="display:block;font-size:13px;margin-bottom:8px">📍 बाज़ारिया, किला रोड, भिंड</span>
+      <a href="tel:+918839800902">📞 +91 88398 00902</a>
+      <a href="https://wa.me/918839800902">💬 WhatsApp</a>
+    </div>
+  </div>
+  <div class="footerBottom">© 2026 Banke Bihari Pujan Samagri — <span data-i18n="footerTagline">श्रद्धा से सेवा तक</span></div>
+</footer>
+
+<button class="floatingWhatsApp" onclick="window.open('https://wa.me/918839800902','_blank')" aria-label="WhatsApp Support">💬</button>
+<button class="backTop" id="backTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑</button>
+<script src="/app.js"></script>
+</body>
+</html>

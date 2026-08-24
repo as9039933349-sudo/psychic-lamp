@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>मेरा खाता — Banke Bihari</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#241A10">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand">
+    <div class="logo">🕉️</div>
+    <div><b>Banke Bihari</b><span>Pujan Samagri</span></div>
+  </a>
+  <div class="topRight">
+    <button class="accountBtn" id="logoutBtn" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="accountWrap" id="loggedOutBox" style="display:none">
+  <div class="accountCard" style="text-align:center">
+    <p>अपने ऑर्डर देखने के लिए लॉगिन करें।</p>
+    <a href="/login.html" class="primary" style="display:inline-block;padding:12px 26px;border-radius:7px;text-decoration:none;color:#111">लॉगिन करें</a>
+  </div>
+</div>
+
+<div class="accountWrap" id="loggedInBox" style="display:none">
+  <div class="accountCard">
+    <h2 id="welcome"></h2>
+    <p style="color:#64748b">📞 <span id="uPhone"></span></p>
+  </div>
+
+  <h2>मेरे ऑर्डर</h2>
+  <div id="ordersList"></div>
+
+  <h2 id="wishlist" style="margin-top:34px">❤️ मेरी Wishlist</h2>
+  <div id="wishlistGrid" class="grid"></div>
+</div>
+
+<div id="reviewToast"></div>
+
+<script>
+const STAGE_CLASS = {
+  'Order Placed': 'placed', 'Packed': 'packed', 'Shipped': 'shipped',
+  'Out for Delivery': 'outfordelivery', 'Delivered': ''
+};
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/';
+}
+
+function renderTracker(stages, currentStatus) {
+  const currentIdx = stages.indexOf(currentStatus);
+  return `<div class="tracker">${stages.map((s, i) => `
+    <div class="step ${i <= currentIdx ? 'done' : ''}">
+      <div class="dot"></div>
+      <div>${s}</div>
+    </div>`).join('')}</div>`;
+}
+
+async function loadAccount() {
+  const meRes = await fetch('/api/me');
+  const meData = await meRes.json();
+  if (!meData.user) {
+    document.getElementById('loggedOutBox').style.display = 'block';
+    return;
+  }
+  document.getElementById('loggedInBox').style.display = 'block';
+  document.getElementById('welcome').textContent = `नमस्ते, ${meData.user.name} 🙏`;
+  document.getElementById('uPhone').textContent = meData.user.phone;
+
+  const ordersRes = await fetch('/api/orders');
+  const ordersData = await ordersRes.json();
+  ordersRenderList(ordersData);
+  loadWishlist();
+}
+
+function ordersRenderList(ordersData) {
+  const list = document.getElementById('ordersList');
+
+  if (ordersData.orders.length === 0) {
+    list.innerHTML = '<div class="orderCard" style="text-align:center;color:#888">अभी तक कोई ऑर्डर नहीं है</div>';
+    return;
+  }
+
+  list.innerHTML = ordersData.orders.map((o) => {
+    const badgeClass = STAGE_CLASS[o.status] || '';
+    return `
+    <div class="orderCard">
+      <div class="orderHead">
+        <b>Order #${o.orderNumber}</b>
+        <span class="badge ${badgeClass}">${o.status}</span>
+      </div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:4px">${new Date(o.createdAt).toLocaleString('hi-IN')}</div>
+      ${renderTracker(ordersData.stages, o.status)}
+      <div style="margin-top:14px">
+        ${o.items.map((it) => `<div class="itemLine"><span>${it.name} × ${it.qty}</span><span>₹${it.price * it.qty}</span></div>`).join('')}
+      </div>
+      <div class="itemLine" style="font-weight:bold;border-top:1px solid #eee;margin-top:8px;padding-top:8px">
+        <span>कुल</span><span>₹${o.total}</span>
+      </div>
+      <div style="color:#64748b;font-size:13px;margin-top:8px">📍 ${o.address}</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadWishlist() {
+  const res = await fetch('/api/wishlist');
+  const data = await res.json();
+  const grid = document.getElementById('wishlistGrid');
+  if (!data.products || !data.products.length) {
+    grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:#888;padding:20px 0">Wishlist खाली है — दुकान से पसंदीदा प्रोडक्ट्स ❤️ पर टैप करके यहां जोड़ें</p>';
+    return;
+  }
+  grid.innerHTML = data.products.map((p) => `
+    <div class="card">
+      <div class="wishBtn active" onclick="removeFromWishlist('${p.id}')">❤️</div>
+      <div class="pic">${p.emoji || '🪔'}</div>
+      <div class="info">
+        <div class="cat">${p.category}</div>
+        <div class="name">${p.name}</div>
+        <div class="price">₹${p.price}${p.mrp && p.mrp > p.price ? `<span class="old">₹${p.mrp}</span>` : ''}</div>
+        <a href="/#products" class="add" style="display:block;text-align:center;text-decoration:none;color:#111;box-sizing:border-box">दुकान में देखें</a>
+      </div>
+    </div>`).join('');
+}
+
+async function removeFromWishlist(productId) {
+  await fetch(`/api/wishlist/${productId}`, { method: 'POST' });
+  loadWishlist();
+}
+
+loadAccount();
+</script>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{})); }
+</script>
+</body>
+</html>

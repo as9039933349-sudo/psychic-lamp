@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>खाता बनाएं — Banke Bihari</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#241A10">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand">
+    <div class="logo">🕉️</div>
+    <div><b>Banke Bihari</b><span>Pujan Samagri</span></div>
+  </a>
+</header>
+
+<div class="authWrap" id="signupBox">
+  <h1>नया खाता बनाएं</h1>
+  <div id="msg"></div>
+  <form id="signupForm">
+    <input id="name" placeholder="पूरा नाम" required>
+    <input id="phone" placeholder="मोबाइल नंबर (10 अंक)" pattern="[0-9]{10}" required>
+    <input id="address" placeholder="डिलीवरी पता (वैकल्पिक)">
+    <input id="password" type="password" placeholder="पासवर्ड" required minlength="4">
+    <button class="primary" type="submit">OTP भेजें</button>
+  </form>
+  <div class="switchLink">पहले से खाता है? <a href="/login.html">लॉगिन करें</a></div>
+</div>
+
+<div class="authWrap" id="otpBox" style="display:none">
+  <h1>मोबाइल नंबर Verify करें</h1>
+  <p style="color:#64748b;font-size:14px">आपके नंबर पर 6 अंकों का OTP भेजा गया है।</p>
+  <div id="devHint" class="devHint"></div>
+  <form id="otpForm">
+    <input id="otpInput" placeholder="6 अंकों का OTP" pattern="[0-9]{6}" maxlength="6" required style="text-align:center;font-size:22px;letter-spacing:8px">
+    <button class="primary" type="submit">Verify करें</button>
+  </form>
+  <div id="otpMsg"></div>
+  <div class="switchLink"><a href="#" id="resendLink">OTP दोबारा भेजें</a></div>
+</div>
+
+<script>
+let signupPhone = '';
+
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  msg.innerHTML = '';
+  const body = {
+    name: document.getElementById('name').value,
+    phone: document.getElementById('phone').value,
+    address: document.getElementById('address').value,
+    password: document.getElementById('password').value
+  };
+  const res = await fetch('/api/signup', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) { msg.innerHTML = `<div class="error">${data.error}</div>`; return; }
+  signupPhone = body.phone;
+  document.getElementById('signupBox').style.display = 'none';
+  document.getElementById('otpBox').style.display = 'block';
+  document.getElementById('devHint').innerHTML =
+    `⚠️ Test mode: असली SMS service अभी जुड़ी नहीं है। आपका OTP है: <b>${data.devOtp}</b><br>
+     (Production में जाने से पहले server.js में एक SMS provider जोड़ें, तब यह hint हट जाएगी)`;
+});
+
+document.getElementById('otpForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const otpMsg = document.getElementById('otpMsg');
+  otpMsg.innerHTML = '';
+  const res = await fetch('/api/verify-otp', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ phone: signupPhone, otp: document.getElementById('otpInput').value })
+  });
+  const data = await res.json();
+  if (!res.ok) { otpMsg.innerHTML = `<div class="error">${data.error}</div>`; return; }
+  window.location.href = '/account.html';
+});
+
+document.getElementById('resendLink').addEventListener('click', async (e) => {
+  e.preventDefault();
+  const res = await fetch('/api/resend-otp', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone: signupPhone })
+  });
+  const data = await res.json();
+  document.getElementById('devHint').innerHTML = `⚠️ नया OTP (test mode): <b>${data.devOtp}</b>`;
+});
+</script>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{})); }
+</script>
+</body>
+</html>

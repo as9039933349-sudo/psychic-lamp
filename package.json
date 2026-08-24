@@ -1,0 +1,11 @@
+{
+  "name": "banke-bihari-store",
+  "version": "1.0.0",
+  "description": "Banke Bihari Pujan Samagri - online store backed by Turso (hosted SQLite)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18.0.0" },
+  "dependencies": {
+    "@libsql/client": "^0.14.0"
+  }
+}

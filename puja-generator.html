@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>पूजा सामग्री जनरेटर — Banke Bihari</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#241A10">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <style>
+    .genWrap{max-width:640px;margin:0 auto;padding:24px 5% 60px}
+    .genWrap h1{font-size:22px;margin-bottom:6px}
+    .genWrap>p{color:#64748b;font-size:14px;margin-bottom:20px}
+    .genCard{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:16px}
+    .genCard select, .genCard input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:7px;font-size:15px}
+    .genCard button{width:100%;padding:13px;background:#241A10;color:white;border:0;border-radius:7px;font-weight:bold;font-size:15px;cursor:pointer;margin-top:6px}
+    .genNote{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:12px 14px;border-radius:8px;font-size:13px;margin-bottom:16px}
+    .genItem{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9}
+    .genItem input[type=checkbox]{width:20px;height:20px;flex-shrink:0}
+    .genItem .info{flex:1}
+    .genItem .info b{display:block;font-size:14px}
+    .genItem .info small{color:#94a3b8;font-size:12px}
+    .genItem .price{font-weight:bold;color:#A8792D;font-size:14px}
+    .genItem.unmatched{opacity:.75}
+    .genItem.unmatched .info small{color:#b91c1c}
+    .otherLink{display:block;text-align:center;margin-top:18px;font-size:13px;color:#64748b}
+    .aiBox textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:7px;min-height:70px;font-size:14px;margin:8px 0}
+  </style>
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand">
+    <div class="logo">🕉️</div>
+    <div><b>Banke Bihari</b><span>Pujan Samagri</span></div>
+  </a>
+  <div class="topRight">
+    <a href="/" class="accountBtn">🏠 Home</a>
+  </div>
+</header>
+
+<div class="genWrap">
+  <h1>🪔 पूजा सामग्री जनरेटर</h1>
+  <p>अपनी पूजा चुनें और मेहमानों की संख्या डालें — पूरी सामान की लिस्ट तुरंत तैयार हो जाएगी।</p>
+
+  <div class="genCard" id="selectCard">
+    <label style="font-size:13px;color:#64748b">पूजा चुनें</label>
+    <select id="templateSelect"><option value="">लोड हो रहा है...</option></select>
+    <label style="font-size:13px;color:#64748b">कितने मेहमान / लोग?</label>
+    <input id="guestCount" type="number" min="1" value="20" placeholder="मेहमानों की संख्या">
+    <button onclick="generateList()">📋 सामान की लिस्ट बनाएं</button>
+  </div>
+
+  <a href="#" class="otherLink" onclick="showAiBox(); return false;">मेरी पूजा इस सूची में नहीं है? →</a>
+
+  <div class="genCard aiBox" id="aiBox" style="display:none">
+    <label style="font-size:13px;color:#64748b">अपनी पूजा के बारे में लिखें</label>
+    <textarea id="aiDescription" placeholder="जैसे: कुलदेवी पूजन, नवरात्रि हवन..."></textarea>
+    <button onclick="generateAiList()">✨ AI से सुझाव लें</button>
+  </div>
+
+  <div id="resultArea"></div>
+</div>
+
+<script>
+let CURRENT_ITEMS = [];
+let CART = JSON.parse(localStorage.getItem('cart') || '[]');
+
+async function loadTemplates() {
+  const res = await fetch('/api/puja-templates');
+  const data = await res.json();
+  const sel = document.getElementById('templateSelect');
+  sel.innerHTML = '<option value="">-- पूजा चुनें --</option>' +
+    data.templates.map(t => `<option value="${t.id}">${t.nameHi}</option>`).join('');
+}
+
+function showAiBox() {
+  document.getElementById('aiBox').style.display = 'block';
+}
+
+async function generateList() {
+  const templateId = document.getElementById('templateSelect').value;
+  const guests = document.getElementById('guestCount').value || 1;
+  if (!templateId) { alert('पहले पूजा चुनें'); return; }
+
+  const res = await fetch(`/api/puja-templates/${templateId}/generate?guests=${guests}`);
+  const data = await res.json();
+  if (!res.ok) { document.getElementById('resultArea').innerHTML = `<div class="error">${data.error}</div>`; return; }
+
+  CURRENT_ITEMS = data.items;
+  renderResult(data.template, data.guestCount, data.items);
+}
+
+function renderResult(template, guestCount, items) {
+  const area = document.getElementById('resultArea');
+  let html = `<div class="genCard">`;
+  html += `<h3 style="margin:0 0 4px">${template.nameHi} — ${guestCount} लोगों के लिए</h3>`;
+  if (template.description) html += `<p style="color:#64748b;font-size:13px;margin:0 0 12px">${template.description}</p>`;
+  if (template.note) html += `<div class="genNote">${template.note}</div>`;
+
+  items.forEach((item, i) => {
+    const matched = !!item.product;
+    html += `
+      <div class="genItem ${matched ? '' : 'unmatched'}">
+        ${matched ? `<input type="checkbox" id="chk${i}" checked>` : `<span style="width:20px;text-align:center">•</span>`}
+        <div class="info">
+          <b>${item.label}</b>
+          <small>${item.qty} ${item.unit}${matched ? '' : ' — दुकान पर पूछें, catalog में नहीं है'}</small>
+        </div>
+        ${matched ? `<span class="price">₹${item.product.price}</span>` : ''}
+      </div>`;
+  });
+  html += `<button onclick="addSelectedToCart()" style="margin-top:16px">🛒 चुनी हुई चीज़ें Cart में डालें</button>`;
+  html += `<p style="font-size:12px;color:#94a3b8;margin-top:10px">नोट: हर आइटम की 1 यूनिट Cart में जुड़ेगी, ज़रूरत अनुसार quantity Cart में बदल सकते हैं।</p>`;
+  html += `</div>`;
+  area.innerHTML = html;
+}
+
+function addSelectedToCart() {
+  let addedCount = 0;
+  CURRENT_ITEMS.forEach((item, i) => {
+    if (!item.product) return;
+    const chk = document.getElementById(`chk${i}`);
+    if (chk && !chk.checked) return;
+    const existing = CART.find((c) => c.productId === item.product.id);
+    if (existing) existing.qty += 1;
+    else CART.push({ productId: item.product.id, qty: 1 });
+    addedCount++;
+  });
+  localStorage.setItem('cart', JSON.stringify(CART));
+  alert(`${addedCount} चीज़ें Cart में डाल दी गईं ✅`);
+  window.location.href = '/';
+}
+
+async function generateAiList() {
+  const description = document.getElementById('aiDescription').value.trim();
+  if (!description) { alert('पूजा के बारे में लिखें'); return; }
+  const guests = document.getElementById('guestCount').value || 1;
+
+  const area = document.getElementById('resultArea');
+  area.innerHTML = `<div class="genCard">⏳ सुझाव तैयार हो रहा है...</div>`;
+
+  const res = await fetch('/api/puja-ai-suggest', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description, guestCount: guests })
+  });
+  const data = await res.json();
+
+  if (!data.ok) {
+    area.innerHTML = `<div class="genCard"><div class="genNote">${data.message}</div></div>`;
+    return;
+  }
+
+  let html = `<div class="genCard">`;
+  html += `<h3 style="margin:0 0 10px">✨ AI सुझाव: ${description}</h3>`;
+  html += `<div class="genNote">यह AI का सुझाव है, असली दुकान से मात्रा confirm करें।</div>`;
+  (data.items || []).forEach((item) => {
+    html += `<div class="genItem unmatched"><span style="width:20px;text-align:center">•</span><div class="info"><b>${item.label}</b><small>${item.qty} ${item.unit}</small></div></div>`;
+  });
+  html += `<a href="https://wa.me/918839800902" class="genCard" style="display:block;text-align:center;text-decoration:none;background:#241A10;color:white;padding:12px;border-radius:7px;margin-top:14px">💬 WhatsApp पर दुकान से पूछें</a>`;
+  html += `</div>`;
+  area.innerHTML = html;
+}
+
+loadTemplates();
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{})); }
+</script>
+</body>
+</html>
